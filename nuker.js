@@ -1,12 +1,3 @@
-class Nuker {
-  static getProfileURL(username) {
-    return "";
-  }
-  static getNewestComment(profile) {
-    return "";
-  }
-}
-
 document.getElementById("nuke").addEventListener("click", () => {
   /*function process() {
     function getCommentById(id) {
@@ -30,23 +21,48 @@ document.getElementById("nuke").addEventListener("click", () => {
     }
     alert(document.body);
   }*/
-  var config;
-  chrome.tabs.create(
-    { url: "https://old.reddit.com/", active: false },
-    (tab) => {
-      chrome.scripting
-        .executeScript({
-          target: { tabId: tab.id },
-          func: () => {
-            return JSON.parse(
-              document.getElementById("config").innerText.slice(8, -1)
-            );
-          },
-        })
-        .then((result) => {
-          config = result[0].result;
-          alert(config.logged);
+  chrome.tabs
+    // first, create a new tab
+    .create({ url: "https://old.reddit.com/", active: false })
+    // next, inject script in that tab to pull config data
+    .then((tab) => {
+      return (async () => {
+        return await chrome.scripting
+          // innject script
+          .executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+              return JSON.parse(
+                document.getElementById("config").innerText.slice(8, -1)
+              );
+            },
+          })
+          // close tab and return data
+          .then((result) => {
+            chrome.tabs.remove(tab.id);
+            return result[0].result;
+          });
+      })();
+    })
+    // next, use config data to pull comment history
+    .then((config) => {
+      /*chrome.tabs.update({
+        url: `https://old.reddit.com/user/${config.logged}/comments`,
+      });*/
+      fetch(
+        new Request(
+          `https://www.reddit.com/user/${config.logged}/comments.json`,
+          {
+            method: "GET",
+            headers: new Headers({
+              "Content-Type": "application/json",
+            }),
+          }
+        )
+      )
+        .then((response) => response.json())
+        .then((response) => {
+          console.log(response);
         });
-    }
-  );
+    });
 });

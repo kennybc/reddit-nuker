@@ -7,9 +7,6 @@
     "default_popup": "index.html",
     "default_icon": "icon.jpg"
   },
-  "host_permissions": ["https://old.reddit.com/"],
-  "permissions": ["scripting"],
-  "background": {
-    "service_worker": "background.js"
-  }
+  "host_permissions": ["https://*.reddit.com/*"],
+  "permissions": ["scripting"]
 }
