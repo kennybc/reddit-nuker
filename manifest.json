@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Reddit Nuker",
+  "description": "Delete Reddit comments in bulk",
+  "version": "1.0",
+  "action": {
+    "default_popup": "index.html",
+    "default_icon": "icon.jpg"
+  },
+  "host_permissions": ["https://old.reddit.com/"],
+  "permissions": ["scripting"],
+  "background": {
+    "service_worker": "background.js"
+  }
+}
