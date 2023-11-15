@@ -1,0 +1,36 @@
+body {
+    background: white;
+    padding: 10px;
+}
+button {
+    outline: none;
+    border: none;
+    background: #777;
+    border-radius: 5px;
+    display: block;
+    width: 100%;
+    color: white;
+    padding: 5px;
+    margin-top: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+}
+button:hover {
+    background: #444;
+}
+
+#wrapper {
+    width: 300px;
+    display: flex;
+    flex-direction: row;
+    gap: 30px;
+}
+#buttons {
+    display: flex;
+    flex-direction: column;
+}
+#log {
+    background: #eee;
+    width: 100%;
+    padding: 10px;
+}

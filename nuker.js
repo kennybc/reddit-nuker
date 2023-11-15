@@ -1,13 +1,22 @@
 class Nuker {
-    #rateLimit = 60; // 60 requests/min
+    #rateLimit = 30; // 60 requests/min
     #username;
     #modhash;
+    #paused = false;
 
     // enum for item types
     #ItemType = Object.freeze({
         COMMENT: "comments",
         POST: "submitted",
     });
+
+    kill() {
+        this.#paused = true;
+    }
+
+    #log(message) {
+        document.getElementById("log").innerHTML += message + "\n";
+    }
 
     async #getUserData() {
         if (
@@ -61,7 +70,7 @@ class Nuker {
         fetch(request)
             .then((response) => {
                 if (response.status == 200) {
-                    alert("deleted comment id " + id);
+                    this.#log("deleted comment id " + id);
                 }
             })
             .catch((error) => {
@@ -72,52 +81,72 @@ class Nuker {
     // delete an item of ID from a given array; sleep between each call
     #deleteBatch(array, index) {
         return new Promise((resolve) => {
-            if (index < array.length) {
+            if (index < array.length && !this.#paused) {
                 this.#deleteById(array[index].data.name);
                 setTimeout(() => {
                     resolve(this.#deleteBatch(array, index + 1));
-                }, 1000);
+                }, 60000 / this.#rateLimit);
             } else {
+                this.#paused = true;
                 resolve();
             }
         });
     }
 
     // submit a GET request to Reddit to retrieve comment or post history json
-    #getUserItems(itemType) {
-        return fetch(
-            new Request(
-                `https://www.reddit.com/user/${
-                    this.#username
-                }/${itemType}.json`,
-                {
-                    method: "GET",
-                    headers: new Headers({
-                        "Content-Type": "application/json",
-                    }),
-                }
-            )
-        ).then((response) => response.json());
+    #deleteUserItems(itemType) {
+        // first get user data
+        this.#getUserData()
+            .then(() => {
+                // next get user item (post/comment) history
+                fetch(
+                    new Request(
+                        `https://www.reddit.com/user/${
+                            this.#username
+                        }/${itemType}.json?limit=2`,
+                        {
+                            method: "GET",
+                            headers: new Headers({
+                                "Content-Type": "application/json",
+                                "User-Agent":
+                                    "Chrome:reddit-nuker:v1.0 (by /u/Skabop)",
+                            }),
+                        }
+                    )
+                )
+                    .then((response) => response.json())
+                    // batch delete from user history; recurse until none left
+                    .then((items) => {
+                        console.log(items);
+                        if (items.data.children.length > 0) {
+                            this.#deleteBatch(items.data.children, 0).then(
+                                () => {
+                                    this.#deleteUserItems(itemType);
+                                }
+                            );
+                        }
+                    });
+            })
+            .then(() => {});
     }
 
     // delete all user comments
     deleteUserComments() {
-        this.#getUserData().then(() => {
-            this.#getUserItems(this.#ItemType.COMMENT).then((comments) => {
-                if (comments.data.children.length > 0) {
-                    this.#deleteBatch(comments.data.children, 0).then(() => {
-                        this.deleteUserComments();
-                    });
-                }
-            });
-        });
+        this.#deleteUserItems(this.#ItemType.COMMENT);
     }
     deleteUserPosts() {
-        this.#getUserItems(this.#ItemType.POST).then((posts) => {});
+        this.#deleteUserItems(this.#ItemType.POST);
     }
 }
 
-document.getElementById("nuke").addEventListener("click", () => {
-    let nuker = new Nuker();
+let nuker = new Nuker();
+
+document.getElementById("comments").addEventListener("click", () => {
     nuker.deleteUserComments();
+});
+document.getElementById("posts").addEventListener("click", () => {
+    nuker.deleteUserPosts();
+});
+document.getElementById("kill").addEventListener("click", () => {
+    nuker.kill();
 });
