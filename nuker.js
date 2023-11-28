@@ -1,6 +1,5 @@
 class Nuker {
-  #username;
-  #modhash;
+  #batchSize = 100; // max = 100
   #paused = false;
 
   // enum for item types
@@ -9,31 +8,76 @@ class Nuker {
     POST: "submitted",
   });
 
+  #id2kind = {
+    t1: "comment",
+    t3: "post",
+  };
+
+  constructor() {
+    this.#displayCooldown();
+  }
+
   kill() {
     this.#paused = true;
   }
 
   #log(message) {
-    document.getElementById("log").innerHTML += message + "\n";
+    let line = document.createElement("p");
+    line.innerHTML = message;
+    document.getElementById("log").appendChild(line);
   }
 
+  #displayCooldown() {
+    chrome.storage.local.get("cooldown").then((data) => {
+      if (Date.now() < data.cooldown) {
+        document.getElementById("comments").classList.add("disabled");
+        document.getElementById("posts").classList.add("disabled");
+        document.getElementById("kill").classList.add("disabled");
+        let tick = window.setInterval(() => {
+          chrome.storage.local.get("cooldown").then((data) => {
+            document.getElementById("cooldown").innerHTML = Math.round(
+              (data.cooldown - Date.now()) / 1000
+            );
+          });
+        }, 1000);
+        window.setTimeout(() => {
+          document.getElementById("comments").classList.remove("disabled");
+          document.getElementById("posts").classList.remove("disabled");
+          document.getElementById("kill").classList.remove("disabled");
+          document.getElementById("cooldown").innerHTML = "";
+          window.clearInterval(tick);
+        }, data.cooldown - Date.now());
+      }
+    });
+  }
+
+  #resetCooldown() {
+    chrome.storage.local
+      .set({ cooldown: Date.now() + 6000 })
+      .then(() => this.#displayCooldown());
+  }
+
+  // get user data if not already set
   async #getUserData() {
-    if (
-      typeof this.#username !== "undefined" &&
-      typeof this.#modhash !== "undefined"
-    ) {
-      return true;
-    }
-    return chrome.tabs
-      .create({ url: "https://old.reddit.com/", active: false })
-      .then((tab) => this.#scrapeUserData(tab))
-      .then((config) => {
-        if (!config.logged) {
-          this.#log("not logged in");
-        }
-        this.#username = config.logged;
-        this.#modhash = config.modhash;
-      });
+    chrome.storage.local.get("config").then((data) => {
+      if (typeof data.config !== "undefined") {
+        return true;
+      }
+      return chrome.tabs
+        .create({ url: "https://old.reddit.com/", active: false })
+        .then((tab) => this.#scrapeUserData(tab))
+        .then((config) => {
+          if (!config.logged) {
+            return this.#log("not logged in");
+          }
+          return chrome.storage.local.set({
+            config: {
+              username: config.logged,
+              modhash: config.modhash,
+            },
+          });
+        });
+    });
   }
 
   // scrapes user data from a given tab,
@@ -58,87 +102,121 @@ class Nuker {
     );
   }
 
-  // submit a POST request to Reddit API to delete an item of given ID
-  #deleteById(id) {
-    var request = new Request(`https://www.reddit.com/api/del?id=${id}`, {
-      method: "POST",
-      headers: new Headers({
-        "X-Modhash": this.#modhash,
-        "Content-Type": "application/json",
-      }),
-    });
-    fetch(request)
-      .then((response) => {
-        if (response.status == 200) {
-          this.#log("deleted comment id " + id);
+  #getUserItems(username, itemType) {
+    return fetch(
+      new Request(
+        `https://www.reddit.com/user/${username}/${itemType}.json?limit=${
+          this.#batchSize
+        }`,
+        {
+          method: "GET",
+          headers: new Headers({
+            "Content-Type": "application/json",
+            "User-Agent": "Chrome:reddit-nuker:v1.0 (by /u/Skabop)",
+          }),
         }
+      )
+    )
+      .then((response) => {
+        if (!response.ok) {
+          return false;
+        }
+        return response.json();
       })
-      .catch((error) => {
-        console.error(error);
-      });
+      .then((json) => json.data.children);
   }
 
-  // delete an item of ID from a given array; sleep between each call
-  #deleteBatch(array, index) {
-    return new Promise((resolve) => {
-      if (index < array.length && !this.#paused) {
-        this.#deleteById(array[index].data.name);
-        setTimeout(() => {
-          resolve(this.#deleteBatch(array, index + 1));
-        }, 60000 / this.#rateLimit);
-      } else {
-        this.#paused = true;
-        resolve();
-      }
+  // submit a POST request to Reddit API to delete an item of given ID
+  async #deleteById(modhash, id) {
+    if (this.#paused) {
+      return this.#log("process killed");
+    }
+    return fetch(
+      new Request(`https://www.reddit.com/api/del?id=${id}`, {
+        method: "POST",
+        headers: new Headers({
+          "X-Modhash": modhash,
+          "Content-Type": "application/json",
+          "User-Agent": "Chrome:reddit-nuker:v1.0 (by /u/Skabop)",
+        }),
+      })
+    ).then((response) => {
+      return response.status;
     });
+    /*return new Promise((resolve) => {
+      resolve(200);
+    });*/
+  }
+
+  // delete a number of items from a given array
+  async #deleteBatch(modhash, array) {
+    let numDeleted = 0;
+    for (let i = 0; i < array.length; i++) {
+      numDeleted += await this.#deleteById(modhash, array[i].data.name).then(
+        (response) => {
+          if (response == 200) {
+            this.#log(
+              `deleted 
+                ${this.#id2kind[array[i].kind]} of id
+                ${array[i].data.id}`
+            );
+            return 1;
+          }
+          return 0;
+        }
+      );
+    }
+    return numDeleted;
   }
 
   // submit a GET request to Reddit to retrieve comment or post history json
   #deleteUserItems(itemType) {
+    this.#paused = false;
     // first get user data
-    this.#getUserData()
-      .then(() => {
-        // next get user item (post/comment) history
-        fetch(
-          new Request(
-            `https://www.reddit.com/user/${
-              this.#username
-            }/${itemType}.json?limit=100`,
-            {
-              method: "GET",
-              headers: new Headers({
-                "Content-Type": "application/json",
-                "User-Agent": "Chrome:reddit-nuker:v1.0 (by /u/Skabop)",
-              }),
+    this.#getUserData().then(() =>
+      // next get user item (post/comment) history
+      chrome.storage.local.get("config").then((data) => {
+        this.#getUserItems(data.config.username, itemType).then((response) => {
+          if (response.length == 0) {
+            return this.#log("no more left to delete");
+          }
+
+          this.#deleteBatch(data.config.modhash, response).then(
+            (numDeleted) => {
+              this.#log("finished deleting batch of " + numDeleted);
             }
-          )
-        )
-          .then((response) => {
-            this.#log(response.headers.get("X-Ratelimit-Used"));
-            this.#log(response.headers.get("X-Ratelimit-Remaining"));
-            this.#log(response.headers.get("X-Ratelimit-Reset"));
-            return response.json();
-          })
-          // batch delete from user history; recurse until none left
-          .then((items) => {
-            console.log(items);
-            /*
-          if (items.data.children.length > 0) {
-            this.#deleteBatch(items.data.children, 0).then(() => {
-              this.#deleteUserItems(itemType);
-            });
-          }*/
-          });
+          );
+        });
       })
-      .then(() => {});
+    );
   }
 
   // delete all user comments
   deleteUserComments() {
-    this.#deleteUserItems(this.#ItemType.COMMENT);
+    chrome.storage.local.get("cooldown").then((data) => {
+      if (Date.now() < data.cooldown) {
+        return this.#log(
+          "on cooldown, please try again in " +
+            Math.round((data.cooldown - Date.now()) / 1000) +
+            " seconds"
+        );
+      }
+      this.#resetCooldown();
+      this.#deleteUserItems(this.#ItemType.COMMENT);
+    });
   }
   deleteUserPosts() {
-    this.#deleteUserItems(this.#ItemType.POST);
+    chrome.storage.local.get("cooldown").then((data) => {
+      if (Date.now() < data.cooldown) {
+        return this.#log(
+          "on cooldown, please try again in " +
+            Math.round((data.cooldown - Date.now()) / 1000) +
+            " seconds"
+        );
+      }
+      this.#resetCooldown();
+      this.#deleteUserItems(this.#ItemType.POST);
+    });
   }
 }
 

@@ -8,5 +8,5 @@
     "default_icon": "icon.jpg"
   },
   "host_permissions": ["https://*.reddit.com/*"],
-  "permissions": ["scripting"]
+  "permissions": ["scripting", "storage"]
 }
