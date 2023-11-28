@@ -1,5 +1,4 @@
 class Nuker {
-  #rateLimit = 30; // 60 requests/min
   #username;
   #modhash;
   #paused = false;
@@ -124,11 +123,11 @@ class Nuker {
           .then((items) => {
             console.log(items);
             /*
-            if (items.data.children.length > 0) {
-              this.#deleteBatch(items.data.children, 0).then(() => {
-                this.#deleteUserItems(itemType);
-              });
-            }*/
+          if (items.data.children.length > 0) {
+            this.#deleteBatch(items.data.children, 0).then(() => {
+              this.#deleteUserItems(itemType);
+            });
+          }*/
           });
       })
       .then(() => {});
