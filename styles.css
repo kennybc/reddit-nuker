@@ -24,7 +24,8 @@ button.disabled {
 }
 
 #wrapper {
-  width: 300px;
+  width: 500px;
+  height: 200px;
   display: flex;
   flex-direction: row;
   gap: 30px;
@@ -36,5 +37,19 @@ button.disabled {
 #log {
   background: #eee;
   width: 100%;
+  overflow: scroll;
   padding: 10px;
+  font-family: "IBM Plex Mono", monospace;
+}
+#log p {
+  margin: 0;
+  position: relative;
+  padding-left: 10px;
+}
+#log p:before {
+  content: ">";
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: #7b7b7b;
 }
