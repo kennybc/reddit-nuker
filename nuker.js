@@ -15,26 +15,77 @@ class Nuker {
 
   constructor() {
     this.#displayCooldown();
+    this.#displayLog();
+    this.#unlock(this.#ItemType.COMMENT);
+    //this.#unlock(this.#ItemType.POST);
+    this.#addClickEvent("comments", this.deleteUserComments);
+    this.#addClickEvent("submitted", this.deleteUserPosts);
+    this.#addClickEvent("abort", this.abort);
   }
 
-  kill() {
+  #addClickEvent(elementId, callback) {
+    let element = document.getElementById(elementId);
+    callback = callback.bind(this);
+    element.addEventListener("click", () => {
+      if (element.classList.contains("unlocked")) {
+        callback();
+      }
+    });
+  }
+
+  abort() {
     this.#paused = true;
   }
 
-  #log(message) {
+  #lock(elementId) {
+    document.getElementById(elementId).classList.remove("unlocked");
+  }
+
+  #unlock(elementId) {
+    document.getElementById(elementId).classList.add("unlocked");
+  }
+
+  #log(...message) {
+    let stamped = {
+      time: new Intl.DateTimeFormat("en-GB", {
+        hour: "numeric",
+        minute: "numeric",
+      }).format(new Date()),
+      message: message.join("<br/>"),
+    };
+    chrome.storage.local.get("log").then((data) => {
+      if (data.log) {
+        data.log.push(stamped);
+      } else {
+        data.log = [stamped];
+      }
+      chrome.storage.local.set({
+        log: data.log,
+      });
+    });
+    this.#print(stamped);
+  }
+  #print(stamped) {
     let log = document.getElementById("log");
-    let line = document.createElement("p");
-    line.innerHTML = message;
+    let line = document.createElement("div");
+    let time = document.createElement("div");
+    let msg = document.createElement("div");
+    time.innerHTML = stamped.time;
+    time.classList.add("log-time");
+    msg.innerHTML = stamped.message;
+    msg.classList.add("log-message");
+    line.appendChild(time);
+    line.appendChild(msg);
+    line.classList.add("log-line");
     log.appendChild(line);
     log.scrollTop = log.scrollHeight;
   }
 
-  #displayCooldown() {
+  async #displayCooldown() {
     chrome.storage.local.get("cooldown").then((data) => {
       if (Date.now() < data.cooldown) {
-        document.getElementById("comments").classList.add("disabled");
-        document.getElementById("posts").classList.add("disabled");
-        document.getElementById("kill").classList.add("disabled");
+        this.#lock(this.#ItemType.COMMENT);
+        this.#lock(this.#ItemType.POST);
         let tick = window.setInterval(() => {
           chrome.storage.local.get("cooldown").then((data) => {
             document.getElementById("cooldown").innerHTML = Math.round(
@@ -43,9 +94,8 @@ class Nuker {
           });
         }, 1000);
         window.setTimeout(() => {
-          document.getElementById("comments").classList.remove("disabled");
-          document.getElementById("posts").classList.remove("disabled");
-          document.getElementById("kill").classList.remove("disabled");
+          this.#unlock(this.#ItemType.COMMENT);
+          this.#unlock(this.#ItemType.POST);
           document.getElementById("cooldown").innerHTML = "";
           window.clearInterval(tick);
         }, data.cooldown - Date.now());
@@ -53,38 +103,69 @@ class Nuker {
     });
   }
 
-  #resetCooldown() {
+  async #displayLog() {
+    chrome.storage.local.get("log").then((data) => {
+      if (data.log) {
+        data.log.forEach((stamped) => {
+          this.#print(stamped);
+        });
+      }
+    });
+  }
+
+  // sets the cooldown in seconds
+  async #setCooldown(seconds) {
     chrome.storage.local
-      .set({ cooldown: Date.now() + 60000 })
+      .set({ cooldown: Date.now() + seconds * 1000 })
       .then(() => this.#displayCooldown());
+  }
+
+  // gets the difference between current time and cooldown expiry time
+  async #getCooldown() {
+    chrome.storage.local.get("cooldown").then((data) => {
+      return Math.max(Math.round((data.cooldown - Date.now()) / 1000), 0);
+    });
   }
 
   // get user data if not already set
   async #getUserData() {
-    chrome.storage.local.get("config").then((data) => {
+    return chrome.storage.local.get("config").then((data) => {
       if (typeof data.config !== "undefined") {
-        return true;
+        return {
+          username: data.config.username,
+          modhash: data.config.modhash,
+        };
       }
+      this.#log("scraping user data...");
       return chrome.tabs
         .create({ url: "https://old.reddit.com/", active: false })
         .then((tab) => this.#scrapeUserData(tab))
         .then((config) => {
           if (!config.logged) {
-            return this.#log("not logged in");
+            this.#log("not logged in");
+            return false;
           }
-          return chrome.storage.local.set({
-            config: {
-              username: config.logged,
-              modhash: config.modhash,
-            },
-          });
+          this.#log("saved user data");
+          return chrome.storage.local
+            .set({
+              config: {
+                username: config.logged,
+                modhash: config.modhash,
+              },
+            })
+            .then(() => {
+              return {
+                username: config.logged,
+                modhash: config.modhash,
+              };
+            });
         });
     });
   }
 
   // scrapes user data from a given tab,
   // returns a Promise containing that data when resolved
-  #scrapeUserData(tab) {
+  async #scrapeUserData(tab) {
     return (
       chrome.scripting
         // inject script
@@ -104,7 +185,8 @@ class Nuker {
     );
   }
 
-  #getUserItems(username, itemType) {
+  // submit a GET request to Reddit to retrieve comment or post history json
+  async #getUserItems(username, itemType) {
     return fetch(
       new Request(
         `https://www.reddit.com/user/${username}/${itemType}.json?limit=${
@@ -121,11 +203,16 @@ class Nuker {
     )
       .then((response) => {
         if (!response.ok) {
+          this.#log("too many requests!");
+          this.#setCooldown(600);
           return false;
         }
         return response.json();
       })
-      .then((json) => json.data.children);
+      .then((json) => json.data.children)
+      .catch((error) => {
+        this.#log(error);
+      });
   }
 
   // submit a POST request to Reddit API to delete an item of given ID
@@ -144,9 +231,13 @@ class Nuker {
           "User-Agent": "Chrome:reddit-nuker:v1.0 (by /u/Skabop)",
         }),
       })
-    ).then((response) => {
-      return response.status;
-    });
+    )
+      .then((response) => {
+        return response.status;
+      })
+      .catch((error) => {
+        this.#log(error);
+      });
   }
 
   // delete a number of items from a given array
@@ -177,36 +268,41 @@ class Nuker {
   }
 
   // submit a GET request to Reddit to retrieve comment or post history json
-  #deleteUserItems(itemType) {
-    chrome.storage.local.get("cooldown").then((data) => {
-      if (Date.now() < data.cooldown) {
+  async #deleteUserItems(itemType) {
+    if (!window.navigator.onLine) return this.#log("no internet connection");
+    this.#getCooldown().then((cooldown) => {
+      if (cooldown > 0) {
         return this.#log(
-          "on cooldown, please try again in " +
-            Math.round((data.cooldown - Date.now()) / 1000) +
-            " seconds"
+          "on cooldown, please try again in " + cooldown + " seconds"
         );
       }
       this.#paused = false;
+      this.#lock(itemType);
       // first get user data
-      this.#getUserData().then(() =>
+      this.#getUserData().then((data) => {
+        this.#log("deleting...");
         // next get user item (post/comment) history
-        chrome.storage.local.get("config").then((data) => {
-          this.#getUserItems(data.config.username, itemType).then(
-            (response) => {
-              if (response.length == 0) {
-                return this.#log("no more left to delete");
-              }
-
-              this.#deleteBatch(data.config.modhash, response).then(
-                (numDeleted) => {
-                  this.#log("total deleted: " + numDeleted);
-                  this.#resetCooldown();
-                }
+        this.#getUserItems(data.username, itemType).then((response) => {
+          let unlock = false;
+          if (typeof variable == "boolean" && !response) {
+            unlock = true;
+          } else if (response.length == 0) {
+            this.#log("no more left to delete");
+            unlock = true;
+          } else {
+            this.#deleteBatch(data.modhash, response).then((numDeleted) => {
+              this.#log(
+                "total deleted: " + numDeleted,
+                "reset cooldown to 60 seconds"
               );
-            }
-          );
-        })
-      );
+              this.#setCooldown(60);
+            });
+          }
+          if (unlock) {
+            this.#unlock(itemType);
+          }
+        });
+      });
     });
   }
 
@@ -219,14 +315,4 @@ class Nuker {
   }
 }
 
-let nuker = new Nuker();
-
-document.getElementById("comments").addEventListener("click", () => {
-  nuker.deleteUserComments();
-});
-document.getElementById("posts").addEventListener("click", () => {
-  nuker.deleteUserPosts();
-});
-document.getElementById("kill").addEventListener("click", () => {
-  nuker.kill();
-});
+let nuker = new Nuker(document);

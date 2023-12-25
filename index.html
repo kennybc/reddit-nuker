@@ -1,22 +1,19 @@
 <html>
   <head>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@300&display=swap"
-      rel="stylesheet"
-    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div id="wrapper">
-      <div id="buttons">
-        <button id="comments">Nuke Comments</button>
-        <button id="posts">Nuke Posts</button>
-        <button id="kill">Kill</button>
+      <div id="control">
+        <h1>Reddit Nuker</h1>
+        <button id="comments">Delete All Comments</button>
+        <button id="submitted">Delete All Posts</button>
         <p>Cooldown: <span id="cooldown"></span></p>
       </div>
-      <div id="log"></div>
+      <div id="display">
+        <div id="log"></div>
+        <button id="abort" class="unlocked">Abort</button>
+      </div>
     </div>
     <script src="nuker.js"></script>
   </body>

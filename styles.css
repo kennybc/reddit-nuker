@@ -1,55 +1,108 @@
+* {
+  box-sizing: border-box;
+}
+
 body {
   background: white;
-  padding: 10px;
+  margin: 0;
+  font-family: Arial, sans-serif;
 }
 button {
   outline: none;
   border: none;
-  background: #777;
-  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.15);
   display: block;
   width: 100%;
-  color: white;
-  padding: 5px;
-  margin-top: 10px;
-  margin-bottom: 10px;
+  color: rgba(255, 255, 255, 0.35);
+  padding: 10px;
+  cursor: not-allowed;
+  transition: background 0.3s ease, color 0.3s ease, padding 0.5s ease;
+  text-align: left;
+}
+button.unlocked {
+  color: rgba(255, 255, 255, 0.85);
   cursor: pointer;
 }
-button:hover {
-  background: #444;
+button.unlocked:hover {
+  background: rgba(255, 255, 255, 0.85);
+  color: #d93a00;
+  padding-left: 15px;
 }
 
-button.disabled {
-  background: #999 !important;
+h1 {
+  font-size: 22px;
+  margin: 10px;
+  margin-bottom: 20px;
+  color: white;
 }
 
 #wrapper {
-  width: 500px;
-  height: 200px;
+  width: 400px;
+  height: 250px;
   display: flex;
   flex-direction: row;
-  gap: 30px;
 }
-#buttons {
+#control {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  background: #d93a00;
+  height: 100%;
+  padding: 10px 0;
+}
+#display {
+  padding: 10px;
+  height: 100%;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow-y: hidden;
+  background: white;
+  border-radius: 5px;
 }
 #log {
-  background: #eee;
-  width: 100%;
-  overflow: scroll;
-  padding: 10px;
-  font-family: "IBM Plex Mono", monospace;
+  overflow-y: scroll;
+  height: 100%;
+  font-family: "Courier New", monospace;
 }
-#log p {
-  margin: 0;
-  position: relative;
-  padding-left: 10px;
+.log-line {
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  margin-bottom: 5px;
 }
-#log p:before {
-  content: ">";
-  position: absolute;
-  top: 0;
-  left: 0;
-  color: #7b7b7b;
+.log-time {
+  color: #ccc;
+}
+.log-message {
+  color: #666;
+}
+
+#abort {
+  background: #ddd;
+  color: #999;
+  font-weight: bold;
+  border-radius: 15px;
+  text-align: center;
+  padding: 5px;
+  margin-top: 10px;
+}
+#abort.unlocked {
+  color: #d93a00;
+}
+#abort.unlocked:hover {
+  background: #bbb;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+  background: #ccc;
 }
