@@ -171,48 +171,40 @@ class Nuker {
 
   // get user data if not already set
   async #getUserData() {
-    return chrome.storage.local.get("config").then(async (data) => {
+    /*return chrome.storage.local.get("config").then(async (data) => {
       // if user data already saved to storage, retrieve it
       if (typeof data.config !== "undefined") {
         return {
           username: data.config.username,
           modhash: data.config.modhash,
         };
-      }
-      // otherwise, scrape data
-      await this.#log(
-        "<span class='green'>starting</span> to scrape user data..."
-      );
-      return chrome.tabs
-        .create({ url: "https://old.reddit.com/", active: false }) // config easier to read in old site
-        .then((tab) => this.#scrapeUserData(tab)) // scrapes user config
-        .then(async (config) => {
-          // not logged in
-          if (!config.logged) {
-            await this.#log(
-              "<span class='red'>error</span>, please login to Reddit first"
-            );
-            return false;
-          }
+      }*/
+    // don't store data locally in case user logs out, modhash will be invalid
+    await this.#log("scraping user data...");
+    return chrome.tabs
+      .create({ url: "https://old.reddit.com/", active: false }) // config easier to read in old site
+      .then((tab) => this.#scrapeUserData(tab)) // scrapes user config
+      .then(async (config) => {
+        // not logged in
+        if (!config.logged) {
           await this.#log(
-            "<span class='blue'>stopping</span>, successfully saved user data"
+            "<span class='red'>error</span>, please login to Reddit first"
           );
-          // store scraped user config to local storage and return it
-          return chrome.storage.local
-            .set({
-              config: {
-                username: config.logged,
-                modhash: config.modhash,
-              },
-            })
-            .then(() => {
-              return {
-                username: config.logged,
-                modhash: config.modhash,
-              };
-            });
-        });
-    });
+          return false;
+        }
+        /*return chrome.storage.local
+          .set({
+            config: {
+              username: config.logged,
+              modhash: config.modhash,
+            },
+          })
+          .then(() => {*/
+        return {
+          username: config.logged,
+          modhash: config.modhash,
+        };
+      });
   }
 
   // scrapes user data from a given tab
