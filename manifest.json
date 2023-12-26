@@ -3,9 +3,14 @@
   "name": "Reddit Nuker",
   "description": "Delete Reddit comments in bulk",
   "version": "1.0",
+  "icons": {
+    "128": "icon.png"
+  },
   "action": {
     "default_popup": "index.html",
-    "default_icon": "icon.jpg"
+    "default_icon": {
+      "128": "icon.png"
+    }
   },
   "host_permissions": ["https://*.reddit.com/*"],
   "permissions": ["scripting", "storage"]

@@ -5,14 +5,21 @@
   <body>
     <div id="wrapper">
       <div id="control">
+        <img id="logo" src="icon.png" />
         <h1>Reddit Nuker</h1>
         <button id="comments">Delete All Comments</button>
         <button id="submitted">Delete All Posts</button>
-        <p>Cooldown: <span id="cooldown"></span></p>
+        <div id="cooldown">
+          <div id="clock">
+            <div id="clock-left"></div>
+            <div id="clock-right"></div>
+          </div>
+          <span id="timer">0</span>s
+        </div>
       </div>
       <div id="display">
         <div id="log"></div>
-        <button id="abort" class="unlocked">Abort</button>
+        <button id="abort">Abort</button>
       </div>
     </div>
     <script src="nuker.js"></script>

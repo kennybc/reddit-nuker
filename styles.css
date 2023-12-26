@@ -1,7 +1,7 @@
+/** global styles **/
 * {
   box-sizing: border-box;
 }
-
 body {
   background: white;
   margin: 0;
@@ -19,30 +19,25 @@ button {
   transition: background 0.3s ease, color 0.3s ease, padding 0.5s ease;
   text-align: left;
 }
-button.unlocked {
-  color: rgba(255, 255, 255, 0.85);
+button.active {
+  color: #fbebe5;
   cursor: pointer;
 }
-button.unlocked:hover {
-  background: rgba(255, 255, 255, 0.85);
+button.active:hover {
+  background: #fbebe5;
   color: #d93a00;
   padding-left: 15px;
 }
-
-h1 {
-  font-size: 22px;
-  margin: 10px;
-  margin-bottom: 20px;
-  color: white;
-}
-
+/** flexbox layout styles **/
 #wrapper {
   width: 400px;
   height: 250px;
   display: flex;
   flex-direction: row;
+  overflow: hidden;
 }
 #control {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -60,10 +55,94 @@ h1 {
   background: white;
   border-radius: 5px;
 }
+/** control panel styles **/
+#logo {
+  position: absolute;
+  width: 50px;
+  z-index: 1;
+  top: 10px;
+  right: 10px;
+}
+h1 {
+  font-size: 22px;
+  margin: 10px;
+  margin-bottom: 20px;
+  margin-top: 30px;
+  color: white;
+  z-index: 2;
+}
+#cooldown {
+  width: 100%;
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: bold;
+  color: #f7d7cc;
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+#cooldown.active {
+  opacity: 1;
+  transform: translateY(0px);
+}
+#clock {
+  height: 20px;
+  width: 20px;
+  position: relative;
+  overflow: hidden;
+}
+#clock-left,
+#clock-right {
+  position: absolute;
+  width: 50%;
+  height: 100%;
+  background: #fbebe5;
+}
+#clock-left {
+  transform-origin: right center;
+  border-radius: 20px 0 0 20px;
+  border-right: none;
+  z-index: 2;
+}
+#clock-right {
+  transform-origin: left center;
+  border-radius: 0 20px 20px 0;
+  border-left: none;
+  z-index: 1;
+  left: 50%;
+}
+#timer {
+  margin-left: 7px;
+}
+@keyframes tick {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@keyframes mask {
+  0% {
+    background: #fbebe5;
+  }
+  50%,
+  100% {
+    background: #d93a00;
+    right: 0;
+    top: 0;
+    border-radius: 0;
+  }
+}
+/** display panel styles **/
 #log {
   overflow-y: scroll;
   height: 100%;
-  font-family: "Courier New", monospace;
+  font-family: monospace;
+  font-size: 10px;
 }
 .log-line {
   display: flex;
@@ -75,25 +154,38 @@ h1 {
   color: #ccc;
 }
 .log-message {
-  color: #666;
+  color: #777;
 }
-
+.red {
+  color: red;
+}
+.orange {
+  color: orange;
+}
+.blue {
+  color: blue;
+}
+.green {
+  color: green;
+}
+.bold {
+  font-weight: bold;
+}
 #abort {
-  background: #ddd;
-  color: #999;
+  background: #eee;
+  color: #aaa;
   font-weight: bold;
   border-radius: 15px;
   text-align: center;
   padding: 5px;
   margin-top: 10px;
 }
-#abort.unlocked {
+#abort.active {
   color: #d93a00;
 }
-#abort.unlocked:hover {
-  background: #bbb;
+#abort.active:hover {
+  background: #ddd;
 }
-
 ::-webkit-scrollbar {
   width: 5px;
 }

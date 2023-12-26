@@ -17,7 +17,7 @@ class Nuker {
     this.#displayCooldown();
     this.#displayLog();
     this.#unlock(this.#ItemType.COMMENT);
-    //this.#unlock(this.#ItemType.POST);
+    this.#unlock(this.#ItemType.POST);
     this.#addClickEvent("comments", this.deleteUserComments);
     this.#addClickEvent("submitted", this.deleteUserPosts);
     this.#addClickEvent("abort", this.abort);
@@ -27,7 +27,7 @@ class Nuker {
     let element = document.getElementById(elementId);
     callback = callback.bind(this);
     element.addEventListener("click", () => {
-      if (element.classList.contains("unlocked")) {
+      if (element.classList.contains("active")) {
         callback();
       }
     });
@@ -38,14 +38,14 @@ class Nuker {
   }
 
   #lock(elementId) {
-    document.getElementById(elementId).classList.remove("unlocked");
+    document.getElementById(elementId).classList.remove("active");
   }
 
   #unlock(elementId) {
-    document.getElementById(elementId).classList.add("unlocked");
+    document.getElementById(elementId).classList.add("active");
   }
 
-  #log(...message) {
+  async #log(...message) {
     let stamped = {
       time: new Intl.DateTimeFormat("en-GB", {
         hour: "numeric",
@@ -53,17 +53,20 @@ class Nuker {
       }).format(new Date()),
       message: message.join("<br/>"),
     };
-    chrome.storage.local.get("log").then((data) => {
+    return chrome.storage.local.get("log").then((data) => {
       if (data.log) {
         data.log.push(stamped);
       } else {
         data.log = [stamped];
       }
-      chrome.storage.local.set({
-        log: data.log,
-      });
+      chrome.storage.local
+        .set({
+          log: data.log,
+        })
+        .then(() => {
+          this.#print(stamped);
+        });
     });
-    this.#print(stamped);
   }
   #print(stamped) {
     let log = document.getElementById("log");
@@ -83,28 +86,33 @@ class Nuker {
 
   async #displayCooldown() {
     chrome.storage.local.get("cooldown").then((data) => {
-      if (Date.now() < data.cooldown) {
+      if (data.cooldown && Date.now() < data.cooldown.expiry) {
         this.#lock(this.#ItemType.COMMENT);
         this.#lock(this.#ItemType.POST);
+        this.#unlock("cooldown");
         let tick = window.setInterval(() => {
-          chrome.storage.local.get("cooldown").then((data) => {
-            document.getElementById("cooldown").innerHTML = Math.round(
-              (data.cooldown - Date.now()) / 1000
-            );
-          });
+          document.getElementById("timer").innerHTML = this.#getCooldown(
+            data.cooldown.expiry
+          );
         }, 1000);
+        document.getElementById("timer").innerHTML = this.#getCooldown(
+          data.cooldown.expiry
+        );
+        this.#setClock(data.cooldown.expiry, data.cooldown.duration);
         window.setTimeout(() => {
           this.#unlock(this.#ItemType.COMMENT);
           this.#unlock(this.#ItemType.POST);
-          document.getElementById("cooldown").innerHTML = "";
+          this.#lock("cooldown");
+          document.getElementById("timer").innerHTML = "";
           window.clearInterval(tick);
-        }, data.cooldown - Date.now());
+        }, data.cooldown.expiry - Date.now());
       }
     });
   }
 
   async #displayLog() {
     chrome.storage.local.get("log").then((data) => {
+      console.log(data.log);
       if (data.log) {
         data.log.forEach((stamped) => {
           this.#print(stamped);
@@ -116,36 +124,55 @@ class Nuker {
   // sets the cooldown in seconds
   async #setCooldown(seconds) {
     chrome.storage.local
-      .set({ cooldown: Date.now() + seconds * 1000 })
+      .set({
+        cooldown: {
+          expiry: Date.now() + seconds * 1000,
+          duration: seconds,
+        },
+      })
       .then(() => this.#displayCooldown());
   }
 
   // gets the difference between current time and cooldown expiry time
-  async #getCooldown() {
-    chrome.storage.local.get("cooldown").then((data) => {
-      return Math.max(Math.round((data.cooldown - Date.now()) / 1000), 0);
-    });
+  #getCooldown(expiry) {
+    return Math.max(Math.round((expiry - Date.now()) / 1000), 0);
+  }
+
+  #setClock(expiry, duration) {
+    let clockLeft = document.getElementById("clock-left");
+    let clockRight = document.getElementById("clock-right");
+    const skip = duration - this.#getCooldown(expiry);
+    clockLeft.style.animation =
+      "mask " + duration + "s -" + skip + "s steps(1, end) forwards";
+    clockRight.style.animation =
+      "tick " + duration + "s -" + skip + "s linear forwards";
   }
 
   // get user data if not already set
   async #getUserData() {
-    return chrome.storage.local.get("config").then((data) => {
+    return chrome.storage.local.get("config").then(async (data) => {
       if (typeof data.config !== "undefined") {
         return {
           username: data.config.username,
           modhash: data.config.modhash,
         };
       }
-      this.#log("scraping user data...");
+      await this.#log(
+        "<span class='green'>starting</span> to scrape user data..."
+      );
       return chrome.tabs
         .create({ url: "https://old.reddit.com/", active: false })
         .then((tab) => this.#scrapeUserData(tab))
-        .then((config) => {
+        .then(async (config) => {
           if (!config.logged) {
-            this.#log("not logged in");
+            await this.#log(
+              "<span class='orange'>error</span>, please login to Reddit first"
+            );
             return false;
           }
-          this.#log("saved user data");
+          await this.#log(
+            "<span class='blue'>stopping</span>, successfully saved user data"
+          );
           return chrome.storage.local
             .set({
               config: {
@@ -201,17 +228,19 @@ class Nuker {
         }
       )
     )
-      .then((response) => {
+      .then(async (response) => {
         if (!response.ok) {
-          this.#log("too many requests!");
+          await this.#log(
+            "<span class='orange'>on cooldown</span>, too many requests"
+          );
           this.#setCooldown(600);
           return false;
         }
         return response.json();
       })
       .then((json) => json.data.children)
-      .catch((error) => {
-        this.#log(error);
+      .catch(async (error) => {
+        await this.#log("<span class='red'>error</span>" + error);
       });
   }
 
@@ -235,8 +264,8 @@ class Nuker {
       .then((response) => {
         return response.status;
       })
-      .catch((error) => {
-        this.#log(error);
+      .catch(async (error) => {
+        await this.#log("<span class='red'>error</span>" + error);
       });
   }
 
@@ -244,11 +273,11 @@ class Nuker {
   async #deleteBatch(modhash, array) {
     let numDeleted = 0;
     for (let i = 0; i < array.length; i++) {
-      // 1 if successful, 0 if unsuccessful, -1 if process killed
+      // 1 if successful, 0 if unsuccessful, -1 if process aborted
       let status = await this.#deleteById(modhash, array[i].data.name).then(
-        (response) => {
+        async (response) => {
           if (response == 200) {
-            this.#log(
+            await this.#log(
               `deleted 
                 ${this.#id2kind[array[i].kind]}, id: 
                 ${array[i].data.id}`
@@ -259,7 +288,7 @@ class Nuker {
         }
       );
       if (status == -1) {
-        this.#log("process killed");
+        await this.#log("<span class='red bold'>aborting process</span>");
         return numDeleted;
       }
       numDeleted += status;
@@ -269,34 +298,49 @@ class Nuker {
 
   // submit a GET request to Reddit to retrieve comment or post history json
   async #deleteUserItems(itemType) {
-    if (!window.navigator.onLine) return this.#log("no internet connection");
-    this.#getCooldown().then((cooldown) => {
-      if (cooldown > 0) {
-        return this.#log(
-          "on cooldown, please try again in " + cooldown + " seconds"
-        );
+    if (!window.navigator.onLine)
+      return await this.#log(
+        "<span class='red'>error</span>, no internet connection"
+      );
+    chrome.storage.local.get("cooldown").then(async (data) => {
+      if (data.cooldown && Date.now() < data.cooldown.expiry) {
+        const cooldown = this.#getCooldown(data.cooldown.expiry);
+        if (cooldown > 0) {
+          return await this.#log(
+            "<span class='orange'>on cooldown</span>, please try again in " +
+              cooldown +
+              " seconds"
+          );
+        }
       }
       this.#paused = false;
       this.#lock(itemType);
       // first get user data
       this.#getUserData().then((data) => {
-        this.#log("deleting...");
+        this.#log("<span class='green'>starting</span> deletion...");
         // next get user item (post/comment) history
-        this.#getUserItems(data.username, itemType).then((response) => {
+        this.#getUserItems(data.username, itemType).then(async (response) => {
           let unlock = false;
           if (typeof variable == "boolean" && !response) {
             unlock = true;
           } else if (response.length == 0) {
-            this.#log("no more left to delete");
+            await this.#log(
+              "<span class='blue'>stopping</span>, no more left to delete"
+            );
             unlock = true;
           } else {
-            this.#deleteBatch(data.modhash, response).then((numDeleted) => {
-              this.#log(
-                "total deleted: " + numDeleted,
-                "reset cooldown to 60 seconds"
-              );
-              this.#setCooldown(60);
-            });
+            this.#unlock("abort");
+            this.#deleteBatch(data.modhash, response).then(
+              async (numDeleted) => {
+                await this.#log(
+                  "<span class='blue'>stopping</span>, total deleted: " +
+                    numDeleted,
+                  "reset cooldown to 60 seconds"
+                );
+                this.#setCooldown(60);
+                this.#lock("abort");
+              }
+            );
           }
           if (unlock) {
             this.#unlock(itemType);
