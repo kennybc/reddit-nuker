@@ -353,6 +353,10 @@ class Nuker {
     this.#lock(itemType);
     // first get user data
     this.#getUserData().then((data) => {
+      if (typeof data == "boolean" && !data) {
+        this.#unlock(itemType);
+        return;
+      }
       this.#log("<span class='green'>starting</span> deletion...");
       // next get user item (post/comment) history
       this.#getUserItems(data.username, itemType).then(async (response) => {

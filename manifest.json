@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Reddit Nuker",
+  "name": "Reddit Nuker - Clean Out Your Reddit",
   "description": "Delete Reddit comments in bulk",
   "version": "1.0",
   "icons": {
