@@ -1,4 +1,4 @@
-// todo: convert mixed use of await/.then to consistent form
+// todo: make consistent use of async/await vs promises
 class Nuker {
   #batchSize = 100; // max = 100
   #paused = false;
