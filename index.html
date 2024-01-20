@@ -6,9 +6,17 @@
     <div id="wrapper">
       <div id="control">
         <img id="logo" src="icon.png" />
+        <div id="info-icon">
+          &#9432;
+          <div id="info">
+            <div>Version: <span id="version"></span></div>
+            <div>Times Used: <span id="times-used"></span></div>
+            <div>Total Deleted: <span id="total-deleted"></span></div>
+          </div>
+        </div>
         <h1>Reddit Nuker</h1>
-        <button id="comments">Delete All Comments</button>
-        <button id="submitted">Delete All Posts</button>
+        <button id="comments" class="active">Delete All Comments</button>
+        <button id="submitted" class="active">Delete All Posts</button>
         <div id="cooldown">
           <div id="clock">
             <div id="clock-left"></div>
