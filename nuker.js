@@ -25,11 +25,21 @@ var funcs = {
   },
 
   lock: (elementId) => {
-    document.getElementById(elementId).classList.remove("active");
+    if (elementId == "all") {
+      document.getElementById("comments").classList.remove("active");
+      document.getElementById("submitted").classList.remove("active");
+    } else {
+      document.getElementById(elementId).classList.remove("active");
+    }
   },
 
   unlock: (elementId) => {
-    document.getElementById(elementId).classList.add("active");
+    if (elementId == "all") {
+      document.getElementById("comments").classList.add("active");
+      document.getElementById("submitted").classList.add("active");
+    } else {
+      document.getElementById(elementId).classList.add("active");
+    }
   },
 
   print: (stamped) => {
@@ -48,60 +58,69 @@ var funcs = {
     log.scrollTop = log.scrollHeight;
   },
 
-  displayUsage: () => {
+  displayUsage: async (usage = false) => {
     document.getElementById("version").innerHTML =
       chrome.runtime.getManifest().version;
-    chrome.runtime.sendMessage({ message: "get-usage" }, (response) => {
-      const data = response.data;
-      document.getElementById("times-used").innerHTML = data.uses;
-      document.getElementById("total-deleted").innerHTML = data.deleted;
-    });
+
+    if (!usage) {
+      response = await chrome.runtime.sendMessage({ message: "get-usage" });
+    }
+    const data = response.data;
+    document.getElementById("times-used").innerHTML = data.uses;
+    document.getElementById("total-deleted").innerHTML = data.deleted;
   },
 
   calcCooldown: (expiry) => {
     return Math.max(Math.round((expiry - Date.now()) / 1000), 0);
   },
-  displayCooldown: () => {
-    chrome.runtime.sendMessage({ message: "get-cooldown" }, (response) => {
-      const data = response.data;
-      if (data && Date.now() < data.expiry) {
-        // lock actions and display cooldown panel
+  displayCooldown: async (cooldown = false, useLocks = true) => {
+    if (!cooldown) {
+      cooldown = (await chrome.runtime.sendMessage({ message: "get-cooldown" }))
+        .data;
+    }
+
+    const data = cooldown;
+    if (data && Date.now() < data.expiry) {
+      // lock actions and display cooldown panel
+      if (useLocks) {
         funcs.lock("comments");
         funcs.lock("submitted");
-        funcs.unlock("cooldown");
-        const cooldown = funcs.calcCooldown(data.expiry);
+      }
+      funcs.unlock("cooldown");
+      const cooldown = funcs.calcCooldown(data.expiry);
 
-        // every second, recalculate the remaining cooldown and update UI
-        let tick = window.setInterval(() => {
-          document.getElementById("timer").innerHTML = funcs.calcCooldown(
-            data.expiry
-          );
-        }, 1000);
-        document.getElementById("timer").innerHTML = cooldown;
+      // every second, recalculate the remaining cooldown and update UI
+      let tick = window.setInterval(() => {
+        document.getElementById("timer").innerHTML = funcs.calcCooldown(
+          data.expiry
+        );
+      }, 1000);
+      document.getElementById("timer").innerHTML = cooldown;
 
-        // set animation of cooldown clock
-        let clockLeft = document.getElementById("clock-left");
-        let clockRight = document.getElementById("clock-right");
-        const skip = data.duration - cooldown;
-        clockLeft.style.animation = "none";
-        clockRight.style.animation = "none";
-        clockLeft.offsetHeight;
-        clockRight.offsetHeight;
-        clockLeft.style.animation =
-          "mask " + data.duration + "s -" + skip + "s steps(1, end) forwards";
-        clockRight.style.animation =
-          "tick " + data.duration + "s -" + skip + "s linear forwards";
+      // set animation of cooldown clock
+      let clockLeft = document.getElementById("clock-left");
+      let clockRight = document.getElementById("clock-right");
+      const skip = data.duration - cooldown;
+      clockLeft.style.animation = "none";
+      clockRight.style.animation = "none";
+      clockLeft.offsetHeight;
+      clockRight.offsetHeight;
+      clockLeft.style.animation =
+        "mask " + data.duration + "s -" + skip + "s steps(1, end) forwards";
+      clockRight.style.animation =
+        "tick " + data.duration + "s -" + skip + "s linear forwards";
 
-        // after cooldown expires, unlock actions and hide cooldown panel
-        window.setTimeout(() => {
+      // after cooldown expires, unlock actions and hide cooldown panel
+      window.setTimeout(() => {
+        if (useLocks) {
           funcs.unlock("comments");
           funcs.unlock("submitted");
-          funcs.lock("cooldown");
-          document.getElementById("timer").innerHTML = "";
-          window.clearInterval(tick);
-        }, data.expiry - Date.now());
-      }
-    });
+        }
+        funcs.lock("cooldown");
+        document.getElementById("timer").innerHTML = "";
+        window.clearInterval(tick);
+      }, data.expiry - Date.now());
+    }
   },
 
   displayLog: () => {
@@ -137,7 +156,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       funcs.displayUsage();
       break;
     case "display-cooldown":
-      funcs.displayCooldown();
+      funcs.displayCooldown(request.what.cooldown, request.what.useLocks);
       break;
     case "print":
       funcs.print(request.what);

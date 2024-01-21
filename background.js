@@ -17,7 +17,8 @@ class Nuker {
   };
 
   // abort any running recurring processes
-  abort() {
+  async abort() {
+    await this.log("<span class='red bold'>abort signal sent</span>");
     this.#paused = true;
   }
 
@@ -32,12 +33,12 @@ class Nuker {
   }
 
   // "lock" an element (button); grays it out and disables functionality
-  #lock(elementId) {
+  #lock(elementId = "all") {
     this.#message({ message: "lock", what: elementId });
   }
 
   // "unlocks" and element (button); restores appearance and functionality
-  #unlock(elementId) {
+  #unlock(elementId = "all") {
     this.#message({ message: "unlock", what: elementId });
   }
 
@@ -77,12 +78,18 @@ class Nuker {
   }
 
   // if a cooldown exists, display it in the UI
-  async #displayCooldown(cooldown) {
-    this.#message({ message: "display-cooldown", what: cooldown });
+  async #displayCooldown(cooldown, useLocks = true) {
+    this.#message({
+      message: "display-cooldown",
+      what: {
+        cooldown,
+        useLocks,
+      },
+    });
   }
 
   // sets the cooldown to a given number of seconds
-  async #setCooldown(seconds) {
+  async #setCooldown(seconds, useLocks = true) {
     let cooldown = {
       expiry: Date.now() + seconds * 1000,
       duration: seconds,
@@ -91,7 +98,7 @@ class Nuker {
       .set({
         cooldown: cooldown,
       })
-      .then(() => this.#displayCooldown(cooldown));
+      .then(() => this.#displayCooldown(cooldown, useLocks));
   }
 
   // gets the cooldown
@@ -266,53 +273,67 @@ class Nuker {
       });
   }
 
-  // delete a number of items from a given array
-  async #deleteBatch(username, modhash, itemType, array = [], index = 0) {
-    // check if batch needs to be repopulated, quit if no more left
-    if (index == array.length) {
-      const items = await this.#getUserItems(username, itemType);
-      if (items && items.length > 0) {
-        array = items;
-        index = 0;
-      } else {
-        return 0;
-      }
-    }
-
+  // gets a batch of items and then deletes them
+  // recurses until none left or aborted
+  async #deleteBatch(username, modhash, itemType, array = []) {
     // 1 if successful, 0 if unsuccessful, -1 if process aborted
-    let status = await this.#deleteById(modhash, array[index].data.name).then(
-      async (response) => {
-        if (typeof response == "boolean" && !response) {
-          return 0;
-        } else if (response == 200) {
-          await this.log(
-            `deleted 
-                ${this.#kind2type[array[index].kind]}, id: 
-                ${array[index].data.id}`
-          );
-          return 1;
+    let deleted = 0;
+    for (let i = 0; i < array.length; i++) {
+      //left off here
+      let status = await this.#deleteById(modhash, array[i].data.name).then(
+        async (response) => {
+          if (typeof response == "boolean" && !response) {
+            return 0;
+          } else if (response == 200) {
+            await this.log(
+              `deleted 
+                ${this.#kind2type[array[i].kind]}, id: 
+                ${array[i].data.id}`
+            );
+            return 1;
+          }
+          return response;
         }
-        return response;
+      );
+      // process aborted, stop recursion
+      if (status == -1) {
+        if (i == 0) {
+          await this.log("<span class='red bold'>aborting process</span>");
+        } else {
+          await this.log(
+            "<span class='red bold'>aborting process</span>",
+            "reset cooldown to 60 seconds"
+          );
+          this.#setCooldown(60);
+        }
+        return deleted;
       }
-    );
-    // process aborted, stop recursion
-    if (status == -1) {
-      await this.log("<span class='red bold'>aborting process</span>");
-      return status;
-    }
-    // failed due to too many requests, stop recursion
-    if (status == 0) {
-      await this.log(
-        `failed to delete 
+      // failed due to too many requests, stop recursion
+      if (status == 0) {
+        await this.log(
+          `failed to delete 
             ${this.#kind2type[array[index].kind]}, id: 
             ${array[index].data.id}`
-      );
-      return status;
+        );
+        return deleted;
+      }
+      deleted++;
     }
-    await new Promise((resolve) => setTimeout(resolve, 600));
+
+    // repopulate array
+    array = await this.#getUserItems(username, itemType);
+    if (!array || array.length == 0) {
+      return deleted;
+    }
+
+    // sleep 60 seconds
+    if (deleted > 0) {
+      this.log("sleeping for 60 seconds...");
+      this.#setCooldown(60, false);
+      await new Promise((resolve) => setTimeout(resolve, 60000));
+    }
     return (
-      status +
-      (await this.#deleteBatch(username, modhash, itemType, array, index + 1))
+      deleted + (await this.#deleteBatch(username, modhash, itemType, array))
     );
   }
 
@@ -332,11 +353,13 @@ class Nuker {
     }
 
     this.#paused = false;
-    this.#lock(itemType);
+    this.#lock();
+    this.#unlock("abort");
     // first get user data
     this.#getUserData().then(async (data) => {
       if (typeof data == "boolean" && !data) {
-        this.#unlock(itemType);
+        this.#unlock();
+        this.#lock("abort");
         return;
       }
       this.log("<span class='green'>starting</span> deletion...");
@@ -344,25 +367,31 @@ class Nuker {
       // begin recursive delete sequence
       this.#deleteBatch(data.username, data.modhash, itemType).then(
         async (deleted) => {
-          // finished deleting, unlock button, update usage stats
-          this.#unlock(itemType);
-          chrome.storage.local.get("usage").then((data) => {
-            if (data.usage) {
-              data.usage.uses++;
-              data.usage.deleted += deleted;
-            } else {
-              data.usage = {
-                uses: 1,
-                deleted: deleted,
-              };
-            }
-            chrome.storage.local.set({
-              usage: data.usage,
+          // finished deleting, unlock buttons, update usage stats
+          this.#unlock();
+          this.#lock("abort");
+          if (deleted > 0) {
+            chrome.storage.local.get("usage").then((data) => {
+              if (data.usage) {
+                data.usage.uses++;
+                data.usage.deleted += deleted;
+              } else {
+                data.usage = {
+                  uses: 1,
+                  deleted: deleted,
+                };
+              }
+              chrome.storage.local
+                .set({
+                  usage: data.usage,
+                })
+                .then(() => {
+                  this.#displayUsage(data.usage);
+                });
             });
-          });
+          }
           await this.log(
-            "<span class='blue'>stopping</span>, no more left to delete",
-            "total deleted: " + deleted
+            "<span class='blue'>stopping</span>, deleted: " + deleted
           );
         }
       );
