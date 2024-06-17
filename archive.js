@@ -1,6 +1,6 @@
 // todo: make consistent use of async/await vs promises
 class Nuker {
-  #batchSize = 100; // max = 100
+  #batchSize = 1; // max = 100
   #paused = false;
   #version = chrome.runtime.getManifest().version;
 
@@ -140,71 +140,90 @@ class Nuker {
     return Math.max(Math.round((expiry - Date.now()) / 1000), 0);
   }
 
-  // get oauth token
-  async authenticate() {
-    // prompt oauth access from user and get code
-    return (
-      chrome.identity
-        .launchWebAuthFlow({
-          interactive: true,
-          url: `https://www.reddit.com/api/v1/authorize?client_id=2uzE9BzrjCHLKcwzGjjh8w&response_type=code&state=123&redirect_uri=${chrome.identity.getRedirectURL()}&duration=temporary&scope=submit+edit+history`,
-        })
-        // use code to retrieve token
-        .then((response) => {
-          const code = new URLSearchParams(response).get("code").slice(0, -2);
-          return fetch("https://www.reddit.com/api/v1/access_token", {
-            method: "POST",
-            headers: {
-              Authorization: `Basic ${btoa(
-                "2uzE9BzrjCHLKcwzGjjh8w:Dim5Hmy9Ye3HrU5om610dBruN4Z3yg"
-              )}`,
-              "Content-Type": "application/x-www-form-urlencoded",
-              "User-Agent": `Chrome:reddit-nuker:v${
-                this.#version
-              } (by /u/Skabop)`,
+  // get user data if not already set
+  async #getUserData() {
+    /*return chrome.storage.local.get("config").then(async (data) => {
+      // if user data already saved to storage, retrieve it
+      if (typeof data.config !== "undefined") {
+        return {
+          username: data.config.username,
+          modhash: data.config.modhash,
+        };
+      }*/
+    // don't store data locally in case user logs out, modhash will be invalid
+    await this.log("scraping user data...");
+    return chrome.tabs
+      .create({ url: "https://old.reddit.com/", active: false }) // config easier to read in old site
+      .then((tab) => this.#scrapeUserData(tab)) // scrapes user config
+      .then(async (config) => {
+        // not logged in
+        if (!config.logged) {
+          await this.log(
+            "<span class='red'>error</span>, please login to Reddit first"
+          );
+          return false;
+        }
+        /*return chrome.storage.local
+          .set({
+            config: {
+              username: config.logged,
+              modhash: config.modhash,
             },
-            body: `grant_type=authorization_code&code=${encodeURIComponent(
-              code
-            )}&redirect_uri=${encodeURI(chrome.identity.getRedirectURL())}`,
           })
-            .then((response) => response.json())
-            .then((response) => {
-              return response.access_token;
-            });
+          .then(() => {*/
+        return {
+          username: config.logged,
+          modhash: config.modhash,
+        };
+      });
+  }
+
+  // scrapes user data from a given tab
+  async #scrapeUserData(tab) {
+    return (
+      chrome.scripting
+        // inject script in the given tab
+        .executeScript({
+          target: { tabId: tab.id },
+          // the script: find and parse user config
+          func: () => {
+            return JSON.parse(
+              document.getElementById("config").innerText.slice(8, -1)
+            );
+          },
+        })
+        // close tab and return scraped config
+        .then((result) => {
+          chrome.tabs.remove(tab.id);
+          return result[0].result;
         })
     );
   }
 
-  request(method, url, token, body) {
-    return fetch(url, {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-        Accept: "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent": `Chrome:reddit-nuker:v${this.#version} (by /u/Skabop)`,
-      },
-      body,
-    });
-  }
-
   // submit a GET request to Reddit to retrieve comment or post history json
-  async #getUserItems(username, itemType, token) {
-    return this.request(
-      "GET",
-      `https://oauth.reddit.com/user/${username}/${itemType}.json?limit=${
-        this.#batchSize
-      }`,
-      token
+  async #getUserItems(username, itemType) {
+    return fetch(
+      new Request(
+        `https://www.reddit.com/user/${username}/${itemType}.json?limit=${
+          this.#batchSize
+        }`,
+        {
+          method: "GET",
+          headers: new Headers({
+            "Content-Type": "application/json",
+            "User-Agent":
+              "Chrome:reddit-nuker:v" + this.#version + " (by /u/Skabop)",
+          }),
+        }
+      )
     )
-      .then((response) => {
-        console.log(response);
+      .then(async (response) => {
         // see README for info on request limits
         if (!response.ok) {
-          this.log(
+          await this.log(
             "<span class='orange'>on cooldown</span>, too many requests"
           );
-          //this.#setCooldown(600);
+          this.#setCooldown(600);
           return false;
         }
         return response.json();
@@ -213,7 +232,6 @@ class Nuker {
         if (!json) {
           return false;
         }
-        console.log(json.data.children);
         return json.data.children;
       })
       .catch(async (error) => {
@@ -222,22 +240,27 @@ class Nuker {
   }
 
   // submit a POST request to Reddit API to delete an item of given ID
-  async #deleteById(id, token) {
+  async #deleteById(modhash, id) {
     // process has been aborted; quit now
     if (this.#paused) {
       return new Promise((resolve) => {
         resolve(-1);
       });
     }
-    return this.request(
-      "POST",
-      `https://oauth.reddit.com/api/del?id=${id}`,
-      token
+    return fetch(
+      new Request(`https://www.reddit.com/api/del?id=${id}`, {
+        method: "POST",
+        headers: new Headers({
+          "X-Modhash": modhash,
+          "Content-Type": "application/json",
+          "User-Agent":
+            "Chrome:reddit-nuker:v" + this.#version + " (by /u/Skabop)",
+        }),
+      })
     )
-      .then((response) => {
-        console.log(response);
+      .then(async (response) => {
         if (!response.ok) {
-          this.log(
+          await this.log(
             "<span class='orange'>on cooldown</span>, too many requests"
           );
           this.#setCooldown(600);
@@ -252,11 +275,12 @@ class Nuker {
 
   // gets a batch of items and then deletes them
   // recurses until none left or aborted
-  async #deleteBatch(username, token, itemType, array = []) {
+  async #deleteBatch(username, modhash, itemType, array = []) {
     // 1 if successful, 0 if unsuccessful, -1 if process aborted
     let deleted = 0;
     for (let i = 0; i < array.length; i++) {
-      let status = await this.#deleteById(array[i].data.name, token).then(
+      //left off here
+      let status = await this.#deleteById(modhash, array[i].data.name).then(
         async (response) => {
           if (typeof response == "boolean" && !response) {
             return 0;
@@ -288,8 +312,8 @@ class Nuker {
       if (status == 0) {
         await this.log(
           `failed to delete 
-            ${this.#kind2type[array[i].kind]}, id: 
-            ${array[i].data.id}`
+            ${this.#kind2type[array[index].kind]}, id: 
+            ${array[index].data.id}`
         );
         return deleted;
       }
@@ -297,19 +321,19 @@ class Nuker {
     }
 
     // repopulate array
-    array = await this.#getUserItems(username, itemType, token);
+    array = await this.#getUserItems(username, itemType);
     if (!array || array.length == 0) {
       return deleted;
     }
 
     // sleep 60 seconds
-    if (deleted > 0) {
-      this.log("sleeping for 10 seconds...");
-      this.#setCooldown(10, false);
-      await new Promise((resolve) => setTimeout(resolve, 10000));
-    }
+    /*if (deleted > 0) {
+      this.log("sleeping for 60 seconds...");
+      this.#setCooldown(60, false);
+      await new Promise((resolve) => setTimeout(resolve, 60000));
+    }*/
     return (
-      deleted + (await this.#deleteBatch(username, token, itemType, array))
+      deleted + (await this.#deleteBatch(username, modhash, itemType, array))
     );
   }
 
@@ -332,35 +356,45 @@ class Nuker {
     this.#lock();
     this.#unlock("abort");
     // first get user data
-    let token = await this.authenticate();
-    this.log(token);
-
-    // begin recursive delete sequence
-    this.#deleteBatch("Skabop", token, itemType).then(async (deleted) => {
-      // finished deleting, unlock buttons, update usage stats
-      this.#unlock();
-      this.#lock("abort");
-      if (deleted > 0) {
-        chrome.storage.local.get("usage").then((data) => {
-          if (data.usage) {
-            data.usage.uses++;
-            data.usage.deleted += deleted;
-          } else {
-            data.usage = {
-              uses: 1,
-              deleted: deleted,
-            };
-          }
-          chrome.storage.local
-            .set({
-              usage: data.usage,
-            })
-            .then(() => {
-              this.#displayUsage(data.usage);
-            });
-        });
+    this.#getUserData().then(async (data) => {
+      if (typeof data == "boolean" && !data) {
+        this.#unlock();
+        this.#lock("abort");
+        return;
       }
-      await this.log("<span class='blue'>stopping</span>, deleted: " + deleted);
+      this.log("<span class='green'>starting</span> deletion...");
+
+      // begin recursive delete sequence
+      this.#deleteBatch(data.username, data.modhash, itemType).then(
+        async (deleted) => {
+          // finished deleting, unlock buttons, update usage stats
+          this.#unlock();
+          this.#lock("abort");
+          if (deleted > 0) {
+            chrome.storage.local.get("usage").then((data) => {
+              if (data.usage) {
+                data.usage.uses++;
+                data.usage.deleted += deleted;
+              } else {
+                data.usage = {
+                  uses: 1,
+                  deleted: deleted,
+                };
+              }
+              chrome.storage.local
+                .set({
+                  usage: data.usage,
+                })
+                .then(() => {
+                  this.#displayUsage(data.usage);
+                });
+            });
+          }
+          await this.log(
+            "<span class='blue'>stopping</span>, deleted: " + deleted
+          );
+        }
+      );
     });
   }
 
