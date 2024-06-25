@@ -2,7 +2,7 @@ import Nuker from "./lib/nuker.js";
 
 let nuker;
 
-chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (typeof nuker === "undefined") {
     nuker = new Nuker();
   }
@@ -17,16 +17,19 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       nuker.abort();
       break;
     case "get-cooldown":
-      const cooldown = await nuker.getCooldown();
-      sendResponse({ data: cooldown });
+      nuker.getCooldown().then((data) => {
+        sendResponse({ data: data });
+      });
       return true;
     case "get-log":
-      const log = await nuker.getLog();
-      sendResponse({ data: log });
+      nuker.getLog().then((data) => {
+        sendResponse({ data: data });
+      });
       return true;
     case "get-usage":
-      const usage = await nuker.getUsage();
-      sendResponse({ data: usage });
+      nuker.getUsage().then((data) => {
+        sendResponse({ data: data });
+      });
       return true;
   }
   sendResponse();
